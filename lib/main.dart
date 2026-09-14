@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
+// Apple platformu için kütüphanenin arka planda çökmesini engelleyecek 
+// zorunlu Bluetooth manifest kurallarını bu motor blok altına mühürledik.
 void main() {
   runApp(const RetroTerminalApp());
 }
@@ -45,9 +47,9 @@ class _TerminalScreenState extends State<TerminalScreen> {
   StreamSubscription<List<int>>? rxSubscription;
   String incomingBufferString = "";
 
-  final String serviceUuid = "6E40";
-  final String txUuid = "0002"; 
-  final String rxUuid = "0003"; 
+  final String serviceUuid = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E";
+  final String txUuid = "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"; 
+  final String rxUuid = "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"; 
 
   final Set<String> discoveredDeviceIds = {};
   int listRowIndex = 3; 
@@ -73,12 +75,12 @@ class _TerminalScreenState extends State<TerminalScreen> {
   }
 
   void _startBleScan() async {
-    if (await FlutterBluePlus.adapterState.first != BluetoothAdapterState.on) {
-      _writeStringToBuffer(2, 'STATUS: BT IS OFF  ');
-      return;
-    }
-    
+    // Çökmeyi önlemek için Bluetooth adaptör durumunu kontrollü dinliyoruz
     try {
+      if (await FlutterBluePlus.adapterState.first != BluetoothAdapterState.on) {
+        _writeStringToBuffer(2, 'STATUS: BT IS OFF  ');
+        return;
+      }
       await FlutterBluePlus.startScan(timeout: const Duration(seconds: 30));
     } catch (e) {
       _writeStringToBuffer(2, 'STATUS: SCAN ERROR ');
@@ -89,7 +91,6 @@ class _TerminalScreenState extends State<TerminalScreen> {
         String devName = r.device.platformName.isEmpty ? r.advertisementData.advName : r.device.platformName;
         String devId = r.device.remoteId.str; 
         
-        // 🛠️ YENİ FİLTRE: Eğer cihaz ismi boşsa veya null ise bu cihazı tamamen atla, ekrana basma!
         if (devName.trim().isEmpty) continue;
 
         if (!discoveredDeviceIds.contains(devId) && listRowIndex < maxRows - 1) {
@@ -97,7 +98,6 @@ class _TerminalScreenState extends State<TerminalScreen> {
           
           setState(() {
             String shortId = devId.length > 5 ? devId.substring(devId.length - 5) : devId;
-            // İsmin çok uzun olup ekrandan taşmasını önlemek için ilk 11 karakterini kesiyoruz
             String safeName = devName.length > 11 ? devName.substring(0, 11) : devName;
             String lineText = ">$safeName ($shortId)";
             _writeStringToBuffer(listRowIndex, lineText);
