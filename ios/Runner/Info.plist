@@ -2,6 +2,14 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- 🛡️ APPLE BLUETOOTH VE BLE İZİN PROTOKOLLERİ -->
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Bu uygulama, retro terminal ekranına veri akışı sağlamak ve donanım komutlarını göndermek için Bluetooth Low Energy (BLE) bağlantısını kullanır.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>Bu uygulama, donanım aygıtlarıyla güvenli kablosuz veri alışverişi yapabilmek için Bluetooth çevre birimlerine erişim talep eder.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Çevredeki Bluetooth Low Energy (BLE) sinyallerini tarayabilmek ve sanal donanımları keşfedebilmek için konum izni gereklidir.</string>
+
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
