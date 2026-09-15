@@ -75,7 +75,6 @@ class _TerminalScreenState extends State<TerminalScreen> {
   }
 
   void _startBleScan() async {
-    // Çökmeyi önlemek için Bluetooth adaptör durumunu kontrollü dinliyoruz
     try {
       if (await FlutterBluePlus.adapterState.first != BluetoothAdapterState.on) {
         _writeStringToBuffer(2, 'STATUS: BT IS OFF  ');
@@ -147,6 +146,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
       _writeStringToBuffer(1, 'STATUS: CONN ERROR  ');
     }
   }
+
   void _setupProtocolReceiver() async {
     if (rxCharacteristic != null) {
       await rxCharacteristic!.setNotifyValue(true);
@@ -175,7 +175,6 @@ class _TerminalScreenState extends State<TerminalScreen> {
       });
     }
   }
-
   void _sendFeedbackOverBle(String keyCommand) async {
     if (txCharacteristic != null) {
       String formattedCommand = keyCommand.toLowerCase();
@@ -183,7 +182,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
       try {
         await txCharacteristic!.write(bytes, withoutResponse: false);
       } catch (e) {
-        // Hata
+        // Hata yönetimi
       }
     }
   }
@@ -228,121 +227,185 @@ class _TerminalScreenState extends State<TerminalScreen> {
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF1E1E24),
-      body: Center(
-        child: Container(
-          width: 390, height: 844,
-          margin: const EdgeInsets.symmetric(vertical: 20),
-          decoration: BoxDecoration(
-            color: Colors.black,
-            borderRadius: BorderRadius.circular(40),
-            border: Border.all(color: const Color(0xFF3A3A3C), width: 8),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withAlpha(128),
-                blurRadius: 20, 
-                spreadRadius: 5
-              )
-            ],
+  // Butonların o anki basılma durumunu hafızada tutan harita
+  final Map<String, bool> _isPressedMap = {};
+
+  // 🎮 Yenilenen Renkli, Beyaz Ok Tonlamalı ve Yaylı Dokunma Efektli Buton Motoru
+  Widget _buildKeyButton(String label, String command) {
+    // Standart yön tuşları için siber beyaz/gri tonlama şeması tanımlıyoruz
+    Color strokeColor = const Color(0xFF8E8E93); 
+    Color textColor = const Color(0xFFE5E5EA);   
+
+    // Özel fonksiyon butonlarının renk kodlarını kilitliyoruz
+    if (command == 'ESC') {
+      strokeColor = const Color(0xFFFF3333); // 🔴 ESC için Saf Kırmızı
+      textColor = const Color(0xFFFF3333);
+    } else if (command == 'ENTER') {
+      strokeColor = const Color(0xFF33FF33); // 🟢 ENTER için Canlı Retro Yeşil
+      textColor = const Color(0xFF33FF33);
+    } else {
+      // Yön tuşlarına dokunulduğunda anlık saf parlak beyaz olmaları için
+      final bool isPressed = _isPressedMap[command] ?? false;
+      if (isPressed) {
+        strokeColor = Colors.white;
+        textColor = Colors.white;
+      }
+    }
+
+    final bool isPressed = _isPressedMap[command] ?? false;
+
+    return GestureDetector(
+      onTapDown: (_) {
+        setState(() { _isPressedMap[command] = true; });
+      },
+      onTapUp: (_) {
+        setState(() { _isPressedMap[command] = false; });
+        _handleKeyPress(command);
+      },
+      onTapCancel: () {
+        setState(() { _isPressedMap[command] = false; });
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 60), // Hızlı yaylanma hızı
+        width: isPressed ? 110 : 115,  // Büyük konforlu tuş ebatları
+        height: isPressed ? 54 : 58, 
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: isPressed 
+              ? strokeColor.withValues(alpha: 0.15) 
+              : const Color(0xFF2C2C2E), 
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: strokeColor.withValues(alpha: isPressed ? 0.9 : 0.6), 
+            width: isPressed ? 2.5 : 1.8, 
           ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(32),
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 12.0),
-                child: Column(
-                  children: [
-                    Container(
-                      width: 110, height: 22,
-                      decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(15)),
-                    ),
-                    const SizedBox(height: 15),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 10.0),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF07140B),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.green.shade800, width: 1.5),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: List.generate(maxRows, (rowIndex) {
-                          return Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: List.generate(maxCols, (colIndex) {
-                              bool isCursor = (rowIndex == cursorRow && colIndex == cursorCol);
-                              String char = screenBuffer[rowIndex][colIndex];
-                              return Container(
-                                width: 15, height: 19,
-                                alignment: Alignment.center,
-                                color: isCursor ? Colors.greenAccent.shade400 : Colors.transparent,
-                                child: Text(
-                                  char,
-                                  style: TextStyle(
-                                    fontFamily: 'Courier', fontSize: 15.5,
-                                    fontWeight: isCursor ? FontWeight.w900 : FontWeight.w700,
-                                    color: isCursor ? Colors.black : Colors.greenAccent.shade400,
-                                  ),
-                                ),
-                              );
-                            }),
-                          );
-                        }),
-                      ),
-                    ),
-                    const Spacer(),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 16),
-                      decoration: BoxDecoration(color: const Color(0xFF1C1C1E), borderRadius: BorderRadius.circular(24)),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                            children: [
-                              _buildLargeKeyButton('ESC', Colors.red.shade900, () => _handleKeyPress('ESC')),
-                              _buildLargeKeyButton('▲\nUP', const Color(0xFF2C2C2E), () => _handleKeyPress('UP')),
-                              _buildLargeKeyButton('ENTER', Colors.green.shade700, () => _handleKeyPress('ENTER')),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                            children: [
-                              _buildLargeKeyButton('◀\nLEFT', const Color(0xFF2C2C2E), () => _handleKeyPress('LEFT')),
-                              _buildLargeKeyButton('▼\nDOWN', const Color(0xFF2C2C2E), () => _handleKeyPress('DOWN')),
-                              _buildLargeKeyButton('RIGHT\n▶', const Color(0xFF2C2C2E), () => _handleKeyPress('RIGHT')),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                  ],
-                ),
-              ),
-            ),
+          boxShadow: [
+            BoxShadow(
+              color: strokeColor.withValues(alpha: isPressed ? 0.3 : 0.1),
+              blurRadius: isPressed ? 10 : 6,
+              offset: isPressed ? const Offset(0, 1) : const Offset(0, 3),
+            )
+          ],
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: textColor, 
+            fontFamily: 'Courier',
+            fontSize: 15,
+            fontWeight: FontWeight.bold,
           ),
         ),
       ),
     );
   }
 
-  Widget _buildLargeKeyButton(String label, Color color, VoidCallback onPressed) {
-    return SizedBox(
-      width: 102, height: 90,
-      child: ElevatedButton(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: color, foregroundColor: Colors.white, padding: EdgeInsets.zero,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-          elevation: 6,
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF1E1E24),
+      body: SafeArea(
+        child: Center(
+          child: Container(
+            width: 390,
+            height: 844,
+            margin: const EdgeInsets.symmetric(vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.black,
+              borderRadius: BorderRadius.circular(40),
+              border: Border.all(color: const Color(0xFF3A3A3C), width: 8),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.5),
+                  blurRadius: 20, 
+                  spreadRadius: 5,
+                )
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(32),
+              child: Column(
+                children: [
+                  // 🟢 RETRO MONİTÖR EKRANI
+                  Expanded(
+                    flex: 65, 
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 14.0),
+                      margin: const EdgeInsets.all(12.0),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF051105),
+                        border: Border.all(color: const Color(0xFF33FF33), width: 2),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final double cellHeight = constraints.maxHeight / maxRows;
+                          
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: List.generate(maxRows, (r) {
+                              final String rowText = screenBuffer[r].join('');
+
+                              return SizedBox(
+                                height: cellHeight,
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: Text(
+                                      rowText,
+                                      style: TextStyle(
+                                        color: const Color(0xFF33FF33),
+                                        fontFamily: 'Courier',
+                                        fontSize: (constraints.maxWidth / maxCols) * 0.85,
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: 1.5,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  
+                  // 🎮 RETRO KLAVYE KONTROL PANELİ
+                  Expanded(
+                    flex: 35, 
+                    child: Container(
+                      color: const Color(0xFF1C1C1E),
+                      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: [
+                              _buildKeyButton('ESC', 'ESC'),
+                              _buildKeyButton('▲ UP', 'UP'),
+                              _buildKeyButton('ENTER', 'ENTER'),
+                            ],
+                          ),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: [
+                              _buildKeyButton('◀ LEFT', 'LEFT'),
+                              _buildKeyButton('▼ DOWN', 'DOWN'),
+                              _buildKeyButton('RIGHT ▶', 'RIGHT'),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
-        onPressed: onPressed,
-        child: Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, height: 1.3), textAlign: TextAlign.center),
       ),
     );
   }
