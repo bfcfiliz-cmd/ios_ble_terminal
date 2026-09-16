@@ -6,10 +6,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
-// Apple platformu için kütüphanenin arka planda çökmesini engelleyecek
-// zorunlu Bluetooth manifest kurallarını bu motor blok altına mühürledik.
 void main() {
-  runApp(const RetroTerminalApp());
+  // 💡 Uygulama başlamadan önce Flutter motor bağlarını kilitliyoruz
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // 💡 Cihazın sağa veya sola dönmesini engelliyor, sadece DİKEY modda çalışmaya zorluyoruz
+  SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]).then((_) {
+    runApp(const RetroTerminalApp());
+  });
 }
 
 class RetroTerminalApp extends StatelessWidget {
@@ -77,6 +84,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
       cursorCol = 0;
       listRowIndex = 3;
       discoveredDeviceIds.clear();
+      incomingBufferString = "";
     });
   }
 
@@ -141,6 +149,10 @@ class _TerminalScreenState extends State<TerminalScreen> {
       });
       _writeStringToBuffer(1, 'STATUS: SERVICES CHK');
 
+      try {
+        await device.requestMtu(512);
+      } catch (_) {}
+
       List<BluetoothService> services = await device.discoverServices();
       for (BluetoothService service in services) {
         if (service.uuid.toString().toUpperCase() ==
@@ -172,7 +184,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
     if (rxCharacteristic != null) {
       await rxCharacteristic!.setNotifyValue(true);
       rxSubscription = rxCharacteristic!.onValueReceived.listen((value) {
-        String chunk = utf8.decode(value);
+        String chunk = utf8.decode(value, allowMalformed: true);
         incomingBufferString += chunk;
 
         while (incomingBufferString.contains('\n')) {
@@ -220,30 +232,17 @@ class _TerminalScreenState extends State<TerminalScreen> {
     }
   }
 
-  // 💡 Linux PC testlerinde ve telefonda %100 ses çıkışı veren saf işletim sistemi MIDI tetikleyicisi
   void _playUniversalClickSound() {
     if (Platform.isLinux) {
-      // Linux ses sürücüsü (PulseAudio) engellerini aşmak için sistem yerleşik uyarısını (SystemAlert) tetikliyoruz 🐧
-      // Bu fonksiyon Linux masaüstünde çok kısa ve net bir dijital "klik/bip" tonu üretir.
-      SystemChannels.platform.invokeMethod<void>(
-        'SystemSound.play',
-        'SystemSoundType.click',
-      );
-      // Ek olarak terminal kanalını zorlayarak donanımsal alarm kanalından bip üretilmesini tetikliyoruz
-      Process.run('bash', [
-        '-c',
-        'echo -e "\\a" > /dev/stderr',
-      ]).catchError((_) => ProcessResult(0, 0, '', ''));
+      HapticFeedback.lightImpact();
     } else {
-      // Gerçek mobil cihazlar (iPhone) için donanımsal tık motoru ve yay haptiği 📱
       SystemSound.play(SystemSoundType.click);
       HapticFeedback.lightImpact();
     }
   }
 
   void _handleKeyPress(String key) {
-    _playUniversalClickSound(); // Evrensel kararlı ses motoru tetiklendi 💡
-
+    _playUniversalClickSound();
     _sendFeedbackOverBle(key);
     setState(() {
       switch (key) {
@@ -285,7 +284,6 @@ class _TerminalScreenState extends State<TerminalScreen> {
 
   final Map<String, bool> _isPressedMap = {};
 
-  // Büyük Metin ve İri Siber Ok İkonlu Buton Düzeni
   Widget _buildKeyButton({
     required String label,
     required String command,
@@ -488,7 +486,6 @@ class _TerminalScreenState extends State<TerminalScreen> {
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          // 1. Satır Düğmeleri
                           Expanded(
                             child: Row(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -506,7 +503,6 @@ class _TerminalScreenState extends State<TerminalScreen> {
                               ],
                             ),
                           ),
-                          // 2. Satır Düğmeleri
                           Expanded(
                             child: Row(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
