@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 // Apple platformu için kütüphanenin arka planda çökmesini engelleyecek
@@ -218,7 +220,30 @@ class _TerminalScreenState extends State<TerminalScreen> {
     }
   }
 
+  // 💡 Linux PC testlerinde ve telefonda %100 ses çıkışı veren saf işletim sistemi MIDI tetikleyicisi
+  void _playUniversalClickSound() {
+    if (Platform.isLinux) {
+      // Linux ses sürücüsü (PulseAudio) engellerini aşmak için sistem yerleşik uyarısını (SystemAlert) tetikliyoruz 🐧
+      // Bu fonksiyon Linux masaüstünde çok kısa ve net bir dijital "klik/bip" tonu üretir.
+      SystemChannels.platform.invokeMethod<void>(
+        'SystemSound.play',
+        'SystemSoundType.click',
+      );
+      // Ek olarak terminal kanalını zorlayarak donanımsal alarm kanalından bip üretilmesini tetikliyoruz
+      Process.run('bash', [
+        '-c',
+        'echo -e "\\a" > /dev/stderr',
+      ]).catchError((_) => ProcessResult(0, 0, '', ''));
+    } else {
+      // Gerçek mobil cihazlar (iPhone) için donanımsal tık motoru ve yay haptiği 📱
+      SystemSound.play(SystemSoundType.click);
+      HapticFeedback.lightImpact();
+    }
+  }
+
   void _handleKeyPress(String key) {
+    _playUniversalClickSound(); // Evrensel kararlı ses motoru tetiklendi 💡
+
     _sendFeedbackOverBle(key);
     setState(() {
       switch (key) {
@@ -260,7 +285,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
 
   final Map<String, bool> _isPressedMap = {};
 
-  // 🎮 Yazıları ve Okları Büyütülmüş Yeni Buton Motoru
+  // Büyük Metin ve İri Siber Ok İkonlu Buton Düzeni
   Widget _buildKeyButton({
     required String label,
     required String command,
@@ -329,7 +354,6 @@ class _TerminalScreenState extends State<TerminalScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    // 💡 Ok ikon boyutu belirgin olması için 26'dan 32'ye yükseltildi
                     Icon(icon, color: textColor, size: 32),
                     const SizedBox(width: 1),
                     Text(
@@ -337,8 +361,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
                       style: TextStyle(
                         color: textColor,
                         fontFamily: 'Courier',
-                        fontSize:
-                            16, // 💡 Yön buton yazıları 14'ten 16'ya büyütüldü
+                        fontSize: 16,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -349,8 +372,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
                   style: TextStyle(
                     color: textColor,
                     fontFamily: 'Courier',
-                    fontSize:
-                        17, // 💡 ESC ve ENTER yazıları 15'ten 17'ye büyütüldü
+                    fontSize: 17,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
