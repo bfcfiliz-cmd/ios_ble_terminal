@@ -7,10 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 void main() {
-  // 💡 Uygulama başlamadan önce Flutter motor bağlarını kilitliyoruz
   WidgetsFlutterBinding.ensureInitialized();
-
-  // 💡 Cihazın sağa veya sola dönmesini engelliyor, sadece DİKEY modda çalışmaya zorluyoruz
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
@@ -63,7 +60,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
 
   final Set<String> discoveredDeviceIds = {};
   int listRowIndex = 3;
-
+  final Map<String, bool> _isPressedMap = {};
   @override
   void initState() {
     super.initState();
@@ -72,6 +69,22 @@ class _TerminalScreenState extends State<TerminalScreen> {
     _writeStringToBuffer(1, '====================');
     _writeStringToBuffer(2, 'NAMED DEVICES ONLY: ');
     _startBleScan();
+  }
+
+  String _calculateCRC16(String text) {
+    List<int> bytes = utf8.encode(text);
+    int crc = 0x0000;
+    for (int byte in bytes) {
+      crc ^= (byte << 8);
+      for (int i = 0; i < 8; i++) {
+        if ((crc & 0x8000) != 0) {
+          crc = ((crc << 1) ^ 0x1021) & 0xFFFF;
+        } else {
+          crc = (crc << 1) & 0xFFFF;
+        }
+      }
+    }
+    return crc.toRadixString(16).toUpperCase().padLeft(4, '0');
   }
 
   void _clearScreen() {
@@ -140,20 +153,32 @@ class _TerminalScreenState extends State<TerminalScreen> {
 
   void _connectToDevice(BluetoothDevice device) async {
     try {
-      dynamic dynamicDevice = device;
-      dynamic requiredLicense = "nonCommercial";
-      await dynamicDevice.connect(license: requiredLicense);
+      if (Platform.isLinux) {
+        final dynamic coreFunction = device.connect;
+        await Function.apply(coreFunction, [], {
+          #autoConnect: false,
+          #timeout: const Duration(seconds: 5),
+        });
+      } else {
+        dynamic dynamicDevice = device;
+        await dynamicDevice.connect(
+          autoConnect: false,
+          timeout: const Duration(seconds: 5),
+          license: "nonCommercial",
+        );
+      }
 
       setState(() {
         targetDevice = device;
       });
       _writeStringToBuffer(1, 'STATUS: SERVICES CHK');
 
+      List<BluetoothService> services = await device.discoverServices();
+
       try {
         await device.requestMtu(512);
       } catch (_) {}
 
-      List<BluetoothService> services = await device.discoverServices();
       for (BluetoothService service in services) {
         if (service.uuid.toString().toUpperCase() ==
             serviceUuid.toUpperCase()) {
@@ -176,7 +201,17 @@ class _TerminalScreenState extends State<TerminalScreen> {
       _writeStringToBuffer(1, '--------------------');
       cursorRow = 2;
     } catch (e) {
-      _writeStringToBuffer(1, 'STATUS: CONN ERROR  ');
+      setState(() {
+        String technicalError = e.toString().trim();
+        if (technicalError.contains('Exception:')) {
+          technicalError = technicalError.replaceAll('Exception:', '');
+        }
+        _writeStringToBuffer(1, '❌ CONN ERROR:');
+        String safeErrorText = technicalError.length > 20
+            ? technicalError.substring(0, 20)
+            : technicalError;
+        _writeStringToBuffer(2, safeErrorText.toUpperCase());
+      });
     }
   }
 
@@ -187,23 +222,47 @@ class _TerminalScreenState extends State<TerminalScreen> {
         String chunk = utf8.decode(value, allowMalformed: true);
         incomingBufferString += chunk;
 
-        while (incomingBufferString.contains('\n')) {
-          int enterIndex = incomingBufferString.indexOf('\n');
-          String fullRowText = incomingBufferString.substring(0, enterIndex);
-          incomingBufferString = incomingBufferString.substring(enterIndex + 1);
+        while (incomingBufferString.contains('\x02') &&
+            incomingBufferString.contains('\x03')) {
+          int startIdx = incomingBufferString.indexOf('\x02');
+          int endIdx = incomingBufferString.indexOf('\x03');
 
-          setState(() {
-            _writeStringToBuffer(cursorRow, fullRowText);
-            if (cursorRow < maxRows - 1) {
-              cursorRow++;
-            } else {
-              for (int i = 0; i < maxRows - 1; i++) {
-                screenBuffer[i] = List.from(screenBuffer[i + 1]);
+          if (endIdx < startIdx) {
+            incomingBufferString = incomingBufferString.substring(endIdx + 1);
+            continue;
+          }
+
+          String fullFrame = incomingBufferString.substring(
+            startIdx + 1,
+            endIdx,
+          );
+          incomingBufferString = incomingBufferString.substring(endIdx + 1);
+
+          if (fullFrame.length < 4) continue;
+
+          String receivedCRC = fullFrame.substring(fullFrame.length - 4);
+          String pureContent = fullFrame.substring(0, fullFrame.length - 4);
+
+          String calculatedCRC = _calculateCRC16(pureContent);
+
+          if (receivedCRC == calculatedCRC) {
+            List<String> lines = pureContent.split('\n');
+            setState(() {
+              cursorRow = 0;
+              cursorCol = 0;
+              for (String singleLine in lines) {
+                String cleanLine = singleLine.replaceAll('\r', '');
+                if (cursorRow < maxRows) {
+                  _writeStringToBuffer(cursorRow, cleanLine);
+                  cursorRow++;
+                }
               }
-              screenBuffer[maxRows - 1] = List.generate(maxCols, (_) => ' ');
-            }
-            cursorCol = 0;
-          });
+            });
+          } else {
+            setState(() {
+              _writeStringToBuffer(0, '⚠️ CRC ERROR DETECTED');
+            });
+          }
         }
       });
     }
@@ -215,9 +274,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
       List<int> bytes = utf8.encode(formattedCommand);
       try {
         await txCharacteristic!.write(bytes, withoutResponse: false);
-      } catch (e) {
-        // Hata yönetimi
-      }
+      } catch (_) {}
     }
   }
 
@@ -274,15 +331,6 @@ class _TerminalScreenState extends State<TerminalScreen> {
       }
     });
   }
-
-  @override
-  void dispose() {
-    rxSubscription?.cancel();
-    targetDevice?.disconnect();
-    super.dispose();
-  }
-
-  final Map<String, bool> _isPressedMap = {};
 
   Widget _buildKeyButton({
     required String label,
@@ -412,7 +460,6 @@ class _TerminalScreenState extends State<TerminalScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // 🟢 RETRO MONİTÖR EKRANI
                   Expanded(
                     flex: 65,
                     child: Container(
@@ -433,7 +480,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
                         builder: (context, constraints) {
                           final double cellHeight =
                               constraints.maxHeight / maxRows;
-                          final double cellWidth =
+                          final double writeWidth =
                               constraints.maxWidth / maxCols;
 
                           return Column(
@@ -446,7 +493,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
                                       CrossAxisAlignment.stretch,
                                   children: List.generate(maxCols, (c) {
                                     return SizedBox(
-                                      width: cellWidth,
+                                      width: writeWidth,
                                       child: Center(
                                         child: Text(
                                           screenBuffer[r][c],
@@ -454,7 +501,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
                                           style: TextStyle(
                                             color: const Color(0xFF33FF33),
                                             fontFamily: 'Courier',
-                                            fontSize: cellWidth * 1.1,
+                                            fontSize: writeWidth * 1.1,
                                             fontWeight: FontWeight.bold,
                                             height: 1.0,
                                           ),
@@ -470,8 +517,6 @@ class _TerminalScreenState extends State<TerminalScreen> {
                       ),
                     ),
                   ),
-
-                  // 🎮 RETRO KLAVYE KONTROL PANELİ
                   Expanded(
                     flex: 35,
                     child: Container(
@@ -536,5 +581,12 @@ class _TerminalScreenState extends State<TerminalScreen> {
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    rxSubscription?.cancel();
+    targetDevice?.disconnect();
+    super.dispose();
   }
 }
