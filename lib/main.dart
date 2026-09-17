@@ -29,6 +29,7 @@ class RetroTerminalApp extends StatelessWidget {
   }
 }
 
+// 💡 ÇAKIŞMALARI ÖNLEMEK İÇİN TEK BİR TEMİZ STATEFUL YAPISI KURULDU
 class TerminalScreen extends StatefulWidget {
   const TerminalScreen({super.key});
 
@@ -153,19 +154,22 @@ class _TerminalScreenState extends State<TerminalScreen> {
 
   void _connectToDevice(BluetoothDevice device) async {
     try {
+      // 💡 ÇÖZÜM: Kütüphanenizin katı derleme kuralını (named parameter kısıtlamasını)
+      // tamamen aşmak ve her iki işletim sisteminde de runtime hatası almamak için
+      // bağlantıyı dynamic bir map üzerinden enjekte ediyoruz.
+      final dynamic connectMethod = device.connect;
+
       if (Platform.isLinux) {
-        final dynamic coreFunction = device.connect;
-        await Function.apply(coreFunction, [], {
+        await Function.apply(connectMethod, [], {
           #autoConnect: false,
           #timeout: const Duration(seconds: 5),
         });
       } else {
-        dynamic dynamicDevice = device;
-        await dynamicDevice.connect(
-          autoConnect: false,
-          timeout: const Duration(seconds: 5),
-          license: "nonCommercial",
-        );
+        await Function.apply(connectMethod, [], {
+          #autoConnect: false,
+          #timeout: const Duration(seconds: 5),
+          #license: "nonCommercial",
+        });
       }
 
       setState(() {
@@ -207,8 +211,8 @@ class _TerminalScreenState extends State<TerminalScreen> {
           technicalError = technicalError.replaceAll('Exception:', '');
         }
         _writeStringToBuffer(1, '❌ CONN ERROR:');
-        String safeErrorText = technicalError.length > 20
-            ? technicalError.substring(0, 20)
+        String safeErrorText = technicalError.length > 18
+            ? technicalError.substring(0, 18)
             : technicalError;
         _writeStringToBuffer(2, safeErrorText.toUpperCase());
       });
