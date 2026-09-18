@@ -49,14 +49,17 @@ class _TerminalScreenState extends State<TerminalScreen> {
   int cursorCol = 0;
 
   BluetoothDevice? targetDevice;
-  BluetoothCharacteristic? txCharacteristic;
-  BluetoothCharacteristic? rxCharacteristic;
+  BluetoothCharacteristic? notifyCharacteristic;
+  BluetoothCharacteristic? writeCharacteristic;
   StreamSubscription<List<int>>? rxSubscription;
   String incomingBufferString = "";
 
   final String serviceUuid = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E";
-  final String txUuid = "6E400002-B5A3-F393-E0A9-E50E24DCCA9E";
-  final String rxUuid = "6E400003-B5A3-F393-E0A9-E50E24DCCA9E";
+
+  // Python test shows the ESP32 sends data on 6E400002.
+  // The central app should listen on this notify characteristic and write on 6E400003.
+  final String notifyUuid = "6E400002-B5A3-F393-E0A9-E50E24DCCA9E";
+  final String writeUuid = "6E400003-B5A3-F393-E0A9-E50E24DCCA9E";
 
   final Set<String> discoveredDeviceIds = {};
   int listRowIndex = 3;
@@ -175,14 +178,17 @@ class _TerminalScreenState extends State<TerminalScreen> {
             serviceUuid.toUpperCase()) {
           for (BluetoothCharacteristic characteristic
               in service.characteristics) {
-            if (characteristic.uuid.toString().toUpperCase() ==
-                txUuid.toUpperCase()) {
-              txCharacteristic = characteristic;
-            }
-            if (characteristic.uuid.toString().toUpperCase() ==
-                rxUuid.toUpperCase()) {
-              rxCharacteristic = characteristic;
+            String characteristicUuid = characteristic.uuid
+                .toString()
+                .toUpperCase();
+
+            if (characteristicUuid == notifyUuid.toUpperCase()) {
+              notifyCharacteristic = characteristic;
               _setupProtocolReceiver();
+            }
+
+            if (characteristicUuid == writeUuid.toUpperCase()) {
+              writeCharacteristic = characteristic;
             }
           }
         }
@@ -207,9 +213,9 @@ class _TerminalScreenState extends State<TerminalScreen> {
   }
 
   void _setupProtocolReceiver() async {
-    if (rxCharacteristic != null) {
-      await rxCharacteristic!.setNotifyValue(true);
-      rxSubscription = rxCharacteristic!.onValueReceived.listen((value) {
+    if (notifyCharacteristic != null) {
+      await notifyCharacteristic!.setNotifyValue(true);
+      rxSubscription = notifyCharacteristic!.onValueReceived.listen((value) {
         String chunk = utf8.decode(value, allowMalformed: true);
         incomingBufferString += chunk;
 
@@ -260,11 +266,11 @@ class _TerminalScreenState extends State<TerminalScreen> {
   }
 
   void _sendFeedbackOverBle(String keyCommand) async {
-    if (txCharacteristic != null) {
+    if (writeCharacteristic != null) {
       String formattedCommand = keyCommand.toLowerCase();
       List<int> bytes = utf8.encode(formattedCommand);
       try {
-        await txCharacteristic!.write(bytes, withoutResponse: false);
+        await writeCharacteristic!.write(bytes, withoutResponse: false);
       } catch (_) {}
     }
   }
