@@ -29,7 +29,6 @@ class RetroTerminalApp extends StatelessWidget {
   }
 }
 
-// 💡 ÇAKIŞMALARI ÖNLEMEK İÇİN TEK BİR TEMİZ STATEFUL YAPISI KURULDU
 class TerminalScreen extends StatefulWidget {
   const TerminalScreen({super.key});
 
@@ -154,23 +153,11 @@ class _TerminalScreenState extends State<TerminalScreen> {
 
   void _connectToDevice(BluetoothDevice device) async {
     try {
-      // 💡 ÇÖZÜM: Kütüphanenizin katı derleme kuralını (named parameter kısıtlamasını)
-      // tamamen aşmak ve her iki işletim sisteminde de runtime hatası almamak için
-      // bağlantıyı dynamic bir map üzerinden enjekte ediyoruz.
-      final dynamic connectMethod = device.connect;
-
-      if (Platform.isLinux) {
-        await Function.apply(connectMethod, [], {
-          #autoConnect: false,
-          #timeout: const Duration(seconds: 5),
-        });
-      } else {
-        await Function.apply(connectMethod, [], {
-          #autoConnect: false,
-          #timeout: const Duration(seconds: 5),
-          #license: "nonCommercial",
-        });
-      }
+      await device.connect(
+        license: License.nonprofit,
+        timeout: const Duration(seconds: 10),
+        autoConnect: false,
+      );
 
       setState(() {
         targetDevice = device;
